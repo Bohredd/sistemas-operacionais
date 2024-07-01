@@ -140,7 +140,7 @@ void executarEscalonador(Escalonador *escalonador, int argc, char **argv) {
     }
 }
 
-int main(int argc, char **argv[]){
+int main(int argc, char *argv[]){
 
     Escalonador escalonador;
 
