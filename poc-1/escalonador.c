@@ -7,7 +7,9 @@ bool VERBOSITY = false;
 bool MULTIPLEQUEUES = false;
 bool SHORTESTJOBFIRST = false;
 
-float aggingInterval[2] = {0.0, 0.0};
+float AGGINGINTERVAL[2] = {0.0, 0.0};
+
+int CLOCK = 0;
 
 typedef struct Processo {
     int pid;
@@ -115,8 +117,8 @@ void readArgs(int argc, char **argv) {
             SHORTESTJOBFIRST = true;
         } else if (strcmp(argv[i], "[a]") == 0) {
             SHORTESTJOBFIRST = false;
-            aggingInterval[0] = 0.0;
-            aggingInterval[1] = 1.0;
+            AGGINGINTERVAL[0] = 0.0;
+            AGGINGINTERVAL[1] = 1.0;
         }
     }
 
@@ -125,14 +127,82 @@ void readArgs(int argc, char **argv) {
     }
 }
 
+Escalonador* reordenarEscalonador(Escalonador* escalonador){
+    if (MULTIPLEQUEUES){
+        bool trocado;
+        int tamanho = escalonador->numProcessos;
+        Processo *processos = escalonador->processos;
+        do {
+            trocado = false;
+            for (int i = 0; i < tamanho - 1; i++) {
+                if (processos[i].prioridadeProcesso < processos[i + 1].prioridadeProcesso) {
+                    Processo temp = processos[i];
+                    processos[i] = processos[i + 1];
+                    processos[i + 1] = temp;
+                    trocado = true;
+                }
+            }
+        } while (trocado);
+    } else {
+        bool trocado;
+        int tamanho = 0;
+        tamanho = escalonador->numProcessos;
+        Processo *processos = escalonador->processos;
+        do {
+            trocado = false;
+            for (int i = 0; i < tamanho - 1; i++) {
+                if (processos[i].tempoChegada > processos[i + 1].tempoChegada) {
+                    Processo temp = processos[i];
+                    processos[i] = processos[i + 1];
+                    processos[i + 1] = temp;
+                    trocado = true;
+                }
+            }
+        } while (trocado);
+    }
+
+    return escalonador;
+}
+
+void MultipleQueues(Escalonador *escalonador) {
+    printf("executando escalonador com multiplas filas\n");
+
+    escalonador = reordenarEscalonador(escalonador);
+
+    for(int i=0;i<escalonador->numProcessos; i++){
+        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d \n", escalonador->processos[i].pid, escalonador->processos[i].prioridadeProcesso, escalonador->processos[i].tempoChegada);
+    }
+}
+
+void ShortestJobFirst(Escalonador *escalonador) {
+    printf("executando escalonador com shortest job first\n");
+
+    escalonador = reordenarEscalonador(escalonador);
+    bool executandoProcessos = true;
+    int numProcessoExecucao = 0;
+    while(executandoProcessos){
+        
+        if(numProcessoExecucao == escalonador->numProcessos){
+            executandoProcessos=false;
+        }
+        printf("Processo em execução: %d e clock %d \n", numProcessoExecucao, CLOCK);
+        numProcessoExecucao++;
+        CLOCK++;
+    }
+
+    for (int i=0; i<escalonador->numProcessos; i++){
+        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d \n", escalonador->processos[i].pid, escalonador->processos[i].prioridadeProcesso, escalonador->processos[i].tempoChegada);
+    }
+}
+
 void executarEscalonador(Escalonador *escalonador, int argc, char **argv) {
 
     if (MULTIPLEQUEUES){
-        printf("executando escalonador com multiplas filas\n");
+        MultipleQueues(escalonador);
     } else if (SHORTESTJOBFIRST) {
-        printf("executando escalonador com shortest job first\n");
+        ShortestJobFirst(escalonador);
     } else {
-        printf("executando escalonador com multiplas filas\n");
+        MultipleQueues(escalonador);
     }
 
     if (VERBOSITY) {
