@@ -37,6 +37,8 @@ Ao menos sete coisas necessitam ser feitas pelo loop do Supervisor a cada ciclo,
 
 O loop principal de seu Supervisor deverá lembrar o pseudocódigo abaixo (irá variar dependendo da política de escalonamento).
 
+
+# TODO: VERIFICAR ESSAS CONDICIONAIS
 Início
 1. se há novos processos, colocar no estado Ready
 2. se o processo executando na CPU (Running) usou seu quantum de tempo, colocar no estado Ready
@@ -47,6 +49,7 @@ Início
 7. atualizar estatísticas de execução
 Fim
 
+# TODO: ESSES VALORES
 Você precisa manter atualizados os seguintes dados estatísticos para os processos:
 número de processos executados
 tempo total decorrido

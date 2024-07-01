@@ -5,7 +5,7 @@
 
 bool VERBOSITY = false;
 bool MULTIPLEQUEUES = false;
-bool SHORTESTJOBFIRST = false;
+bool FIRSTCOMEFIRSTSERVED = false;
 
 float AGGINGINTERVAL[2] = {0.0, 0.0};
 
@@ -15,6 +15,7 @@ typedef struct Processo {
     int pid;
     int tempoChegada;
     int quantiaClocksNecessaria;
+    int parouNoClock;
     int prioridadeProcesso;
     char estadoAtual[20];
 } Processo;
@@ -83,7 +84,8 @@ Escalonador adicionarProcessos(const char* nomeArquivo, Escalonador* escalonador
             } else if (qualInformacao == 3){
                 escalonador->processos[lineNumber - 1].prioridadeProcesso = atoi(token);
             } else {
-                continue;
+                escalonador->processos[lineNumber - 1].parouNoClock = 0;
+                strcpy(escalonador->processos[lineNumber - 1].estadoAtual, "ready");
             }
             token = strtok(NULL, ":");
             qualInformacao++;
@@ -114,15 +116,15 @@ void readArgs(int argc, char **argv) {
         } else if (strcmp(argv[i], "-F") == 0) {
             MULTIPLEQUEUES = true;
         } else if (strcmp(argv[i], "-S") == 0) {
-            SHORTESTJOBFIRST = true;
+            FIRSTCOMEFIRSTSERVED = true;
         } else if (strcmp(argv[i], "[a]") == 0) {
-            SHORTESTJOBFIRST = false;
+            FIRSTCOMEFIRSTSERVED = false;
             AGGINGINTERVAL[0] = 0.0;
             AGGINGINTERVAL[1] = 1.0;
         }
     }
 
-    if (!MULTIPLEQUEUES && !SHORTESTJOBFIRST) {
+    if (!MULTIPLEQUEUES && !FIRSTCOMEFIRSTSERVED) {
         MULTIPLEQUEUES = true;
     }
 }
@@ -174,7 +176,7 @@ void MultipleQueues(Escalonador *escalonador) {
     }
 }
 
-void ShortestJobFirst(Escalonador *escalonador) {
+void FirstComeFirstServed(Escalonador *escalonador) {
     printf("executando escalonador com shortest job first\n");
 
     escalonador = reordenarEscalonador(escalonador);
@@ -199,8 +201,8 @@ void executarEscalonador(Escalonador *escalonador, int argc, char **argv) {
 
     if (MULTIPLEQUEUES){
         MultipleQueues(escalonador);
-    } else if (SHORTESTJOBFIRST) {
-        ShortestJobFirst(escalonador);
+    } else if (FIRSTCOMEFIRSTSERVED) {
+        FirstComeFirstServed(escalonador);
     } else {
         MultipleQueues(escalonador);
     }
@@ -215,13 +217,6 @@ int main(int argc, char *argv[]){
     Escalonador escalonador;
 
     escalonador = adicionarProcessos(argv[1], &escalonador);
-
-    for (int i = 0; i < escalonador.numProcessos; i++) {
-        printf("PID: %d\n", escalonador.processos[i].pid);
-        printf("Tempo de execucao: %d\n", escalonador.processos[i].tempoChegada);
-        printf("Quantia de clocks necessaria: %d\n", escalonador.processos[i].quantiaClocksNecessaria);
-        printf("Prioridade do processo: %d\n", escalonador.processos[i].prioridadeProcesso);
-    }
 
     readArgs(argc, argv);
 
