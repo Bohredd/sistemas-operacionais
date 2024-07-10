@@ -10,6 +10,7 @@ bool FIRSTCOMEFIRSTSERVED = false;
 float AGGINGINTERVAL[2] = {0.0, 0.0};
 
 int CLOCK = 0;
+int NUMPROCESSOSEXECUTADOS = 0;
 
 typedef struct Processo {
     int pid;
@@ -173,6 +174,8 @@ void MultipleQueues(Escalonador *escalonador) {
 
     for(int i=0;i<escalonador->numProcessos; i++){
         printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d \n", escalonador->processos[i].pid, escalonador->processos[i].prioridadeProcesso, escalonador->processos[i].tempoChegada);
+        NUMPROCESSOSEXECUTADOS++;
+        printf("Numero de Processos Executados no Total: %d \n", NUMPROCESSOSEXECUTADOS);
     }
 }
 
@@ -186,10 +189,13 @@ void FirstComeFirstServed(Escalonador *escalonador) {
         
         if(numProcessoExecucao == escalonador->numProcessos){
             executandoProcessos=false;
+        } else {
+            printf("Processo em execução: %d e clock %d \n", numProcessoExecucao, CLOCK);
+            numProcessoExecucao++;
+            CLOCK++;
+            NUMPROCESSOSEXECUTADOS++;
+            printf("Numero de Processos Executados no Total: %d \n", NUMPROCESSOSEXECUTADOS);
         }
-        printf("Processo em execução: %d e clock %d \n", numProcessoExecucao, CLOCK);
-        numProcessoExecucao++;
-        CLOCK++;
     }
 
     for (int i=0; i<escalonador->numProcessos; i++){
