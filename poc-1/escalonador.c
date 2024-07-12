@@ -2,10 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <limits.h>
 
 bool VERBOSITY = false;
 bool MULTIPLEQUEUES = false;
-bool FIRSTCOMEFIRSTSERVED = false;
+bool SHORTESTJOBFIRST = false;
 
 float AGGINGINTERVAL[2] = {0.0, 0.0};
 
@@ -16,9 +17,10 @@ typedef struct Processo {
     int pid;
     int tempoChegada;
     int quantiaClocksNecessaria;
-    int parouNoClock;
+    int clocksFaltantes;
     int prioridadeProcesso;
     char estadoAtual[20];
+    bool terminado;
 } Processo;
 
 typedef struct Escalonador {
@@ -26,12 +28,12 @@ typedef struct Escalonador {
     Processo *processos;
 } Escalonador;
 
-void liberarMemoria(Escalonador escalonador){
-    free(escalonador.processos);
+void liberarMemoria(Escalonador *escalonador) {
+    free(escalonador->processos);
 }
 
-int getQuantiaProcessos(const char* nomeArquivo){
-    FILE* file = fopen(nomeArquivo, "r");
+int getQuantiaProcessos(const char *nomeArquivo) {
+    FILE *file = fopen(nomeArquivo, "r");
     if (file == NULL) {
         perror("Erro ao abrir o arquivo");
         exit(EXIT_FAILURE);
@@ -40,8 +42,7 @@ int getQuantiaProcessos(const char* nomeArquivo){
     int quantiaProcessos = 0;
     char ch;
 
-    while (!feof(file)) {
-        ch = fgetc(file);
+    while ((ch = fgetc(file)) != EOF) {
         if (ch == '\n') {
             quantiaProcessos++;
         }
@@ -51,8 +52,8 @@ int getQuantiaProcessos(const char* nomeArquivo){
     return quantiaProcessos;
 }
 
-Escalonador adicionarProcessos(const char* nomeArquivo, Escalonador* escalonador) {
-    FILE* file = fopen(nomeArquivo, "r");
+Escalonador adicionarProcessos(const char *nomeArquivo, Escalonador *escalonador) {
+    FILE *file = fopen(nomeArquivo, "r");
     if (file == NULL) {
         perror("Erro ao abrir o arquivo");
         exit(EXIT_FAILURE);
@@ -62,37 +63,24 @@ Escalonador adicionarProcessos(const char* nomeArquivo, Escalonador* escalonador
 
     escalonador->numProcessos = quantiaProcessos;
 
-    int lineNumber = 1;
+    escalonador->processos = (Processo *)malloc(escalonador->numProcessos * sizeof(Processo));
+    if (escalonador->processos == NULL) {
+        perror("Erro ao alocar memória");
+        exit(EXIT_FAILURE);
+    }
+
     char line[256];
-
-    escalonador->processos = (Processo*)malloc(escalonador->numProcessos * sizeof(Processo));
-
-    int qualInformacao = 0;
+    int lineNumber = 0;
 
     while (fgets(line, sizeof(line), file)) {
-        line[strcspn(line, "\n")] = 0;
+        sscanf(line, "%d:%d:%d:%d", 
+               &escalonador->processos[lineNumber].pid,
+               &escalonador->processos[lineNumber].tempoChegada,
+               &escalonador->processos[lineNumber].quantiaClocksNecessaria,
+               &escalonador->processos[lineNumber].prioridadeProcesso);
 
-        char *token = strtok(line, ":");
-
-        while (token != NULL) {
-
-            if (qualInformacao == 0) {
-                escalonador->processos[lineNumber - 1].pid = atoi(token);
-            } else if (qualInformacao == 1){
-                escalonador->processos[lineNumber - 1].tempoChegada = atoi(token);
-            } else if (qualInformacao == 2) {
-                escalonador->processos[lineNumber - 1].quantiaClocksNecessaria = atoi(token);
-            } else if (qualInformacao == 3){
-                escalonador->processos[lineNumber - 1].prioridadeProcesso = atoi(token);
-            } else {
-                escalonador->processos[lineNumber - 1].parouNoClock = 0;
-                strcpy(escalonador->processos[lineNumber - 1].estadoAtual, "ready");
-            }
-            token = strtok(NULL, ":");
-            qualInformacao++;
-        }
-
-        qualInformacao = 0;
+        escalonador->processos[lineNumber].clocksFaltantes = escalonador->processos[lineNumber].quantiaClocksNecessaria;
+        strcpy(escalonador->processos[lineNumber].estadoAtual, "ready");
 
         lineNumber++;
     }
@@ -102,62 +90,49 @@ Escalonador adicionarProcessos(const char* nomeArquivo, Escalonador* escalonador
     return *escalonador;
 }
 
-Processo* trocarEstado(Processo *processo, char estado[20]) {
-    free(processo->estadoAtual);
-    strcpy(processo->estadoAtual, estado);
-    return processo;
-}
-
 void readArgs(int argc, char **argv) {
-    int i;
-    for (i = 2; i < argc; i++) {
-
-        if(strcmp(argv[i], "-V") == 0) {
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-V") == 0) {
             VERBOSITY = true;
         } else if (strcmp(argv[i], "-F") == 0) {
             MULTIPLEQUEUES = true;
         } else if (strcmp(argv[i], "-S") == 0) {
-            FIRSTCOMEFIRSTSERVED = true;
+            SHORTESTJOBFIRST = true;
         } else if (strcmp(argv[i], "[a]") == 0) {
-            FIRSTCOMEFIRSTSERVED = false;
+            SHORTESTJOBFIRST = false;
             AGGINGINTERVAL[0] = 0.0;
             AGGINGINTERVAL[1] = 1.0;
         }
     }
 
-    if (!MULTIPLEQUEUES && !FIRSTCOMEFIRSTSERVED) {
+    if (!MULTIPLEQUEUES && !SHORTESTJOBFIRST) {
         MULTIPLEQUEUES = true;
     }
 }
 
-Escalonador* reordenarEscalonador(Escalonador* escalonador){
-    if (MULTIPLEQUEUES){
+Escalonador* reordenarEscalonador(Escalonador *escalonador) {
+    if (MULTIPLEQUEUES) {
         bool trocado;
-        int tamanho = escalonador->numProcessos;
-        Processo *processos = escalonador->processos;
         do {
             trocado = false;
-            for (int i = 0; i < tamanho - 1; i++) {
-                if (processos[i].prioridadeProcesso < processos[i + 1].prioridadeProcesso) {
-                    Processo temp = processos[i];
-                    processos[i] = processos[i + 1];
-                    processos[i + 1] = temp;
+            for (int i = 0; i < escalonador->numProcessos - 1; i++) {
+                if (escalonador->processos[i].prioridadeProcesso < escalonador->processos[i + 1].prioridadeProcesso) {
+                    Processo temp = escalonador->processos[i];
+                    escalonador->processos[i] = escalonador->processos[i + 1];
+                    escalonador->processos[i + 1] = temp;
                     trocado = true;
                 }
             }
         } while (trocado);
     } else {
         bool trocado;
-        int tamanho = 0;
-        tamanho = escalonador->numProcessos;
-        Processo *processos = escalonador->processos;
         do {
             trocado = false;
-            for (int i = 0; i < tamanho - 1; i++) {
-                if (processos[i].tempoChegada > processos[i + 1].tempoChegada) {
-                    Processo temp = processos[i];
-                    processos[i] = processos[i + 1];
-                    processos[i + 1] = temp;
+            for (int i = 0; i < escalonador->numProcessos - 1; i++) {
+                if (escalonador->processos[i].tempoChegada > escalonador->processos[i + 1].tempoChegada) {
+                    Processo temp = escalonador->processos[i];
+                    escalonador->processos[i] = escalonador->processos[i + 1];
+                    escalonador->processos[i + 1] = temp;
                     trocado = true;
                 }
             }
@@ -167,68 +142,105 @@ Escalonador* reordenarEscalonador(Escalonador* escalonador){
     return escalonador;
 }
 
-void MultipleQueues(Escalonador *escalonador) {
-    printf("executando escalonador com multiplas filas\n");
-
-    escalonador = reordenarEscalonador(escalonador);
-
-    for(int i=0;i<escalonador->numProcessos; i++){
-        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d \n", escalonador->processos[i].pid, escalonador->processos[i].prioridadeProcesso, escalonador->processos[i].tempoChegada);
-        NUMPROCESSOSEXECUTADOS++;
-        printf("Numero de Processos Executados no Total: %d \n", NUMPROCESSOSEXECUTADOS);
-    }
-}
-
-void FirstComeFirstServed(Escalonador *escalonador) {
-    printf("executando escalonador com shortest job first\n");
-
-    escalonador = reordenarEscalonador(escalonador);
-    bool executandoProcessos = true;
-    int numProcessoExecucao = 0;
-    while(executandoProcessos){
-        
-        if(numProcessoExecucao == escalonador->numProcessos){
-            executandoProcessos=false;
-        } else {
-            printf("Processo em execução: %d e clock %d \n", numProcessoExecucao, CLOCK);
-            numProcessoExecucao++;
-            CLOCK++;
-            NUMPROCESSOSEXECUTADOS++;
-            printf("Numero de Processos Executados no Total: %d \n", NUMPROCESSOSEXECUTADOS);
+Processo getProcessoChegada(Escalonador *escalonador, int clock) {
+    for (int i = 0; i < escalonador->numProcessos; i++) {
+        if (escalonador->processos[i].tempoChegada == clock) {
+            return escalonador->processos[i];
         }
     }
+    Processo nullProcesso = { .pid = -1 };
+    return nullProcesso;
+}
 
-    for (int i=0; i<escalonador->numProcessos; i++){
-        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d \n", escalonador->processos[i].pid, escalonador->processos[i].prioridadeProcesso, escalonador->processos[i].tempoChegada);
+bool chegouProcesso(Escalonador *escalonador, int clock) {
+    for (int i = 0; i < escalonador->numProcessos; i++) {
+        if (escalonador->processos[i].tempoChegada == clock) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void MultipleQueues(Escalonador *escalonador) {
+    printf("Executando escalonador com Múltiplas Filas com Prioridade\n");
+
+    escalonador = reordenarEscalonador(escalonador);
+
+    bool executandoProcessos = true;
+    int index = 0;
+
+    printf("Numero de processos: %d\n", escalonador->numProcessos);
+    while(executandoProcessos) {
+
+        if(NUMPROCESSOSEXECUTADOS == (escalonador->numProcessos -1)) {
+            executandoProcessos = false;
+        }
+
+        if(chegouProcesso(escalonador, CLOCK)) {
+            Processo processo = getProcessoChegada(escalonador, CLOCK);
+            printf("Processo de PID %d chegou no clock %d\n", processo.pid, CLOCK);
+        }
+
+        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d Clocks Faltantes: %d \n", escalonador->processos[index].pid, escalonador->processos[index].prioridadeProcesso, escalonador->processos[index].tempoChegada, escalonador->processos[index].clocksFaltantes);
+        index++;
+        CLOCK++;
+        NUMPROCESSOSEXECUTADOS++;
     }
 }
 
-void executarEscalonador(Escalonador *escalonador, int argc, char **argv) {
+void ShortestJobFirst(Escalonador *escalonador) {
+    printf("Executando escalonador com Shortest Job First preemptivo (SJF)\n");
 
-    if (MULTIPLEQUEUES){
+    escalonador = reordenarEscalonador(escalonador);
+
+    bool executandoProcessos = true;
+    int index = 0;
+
+    printf("Numero de processos: %d\n", escalonador->numProcessos);
+    while(executandoProcessos) {
+
+        if(NUMPROCESSOSEXECUTADOS == (escalonador->numProcessos -1)) {
+            executandoProcessos = false;
+        }
+
+        if(chegouProcesso(escalonador, CLOCK)) {
+            Processo processo = getProcessoChegada(escalonador, CLOCK);
+            printf("Processo de PID %d chegou no clock %d\n", processo.pid, CLOCK);
+        }
+
+        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d Clocks Faltantes: %d \n", escalonador->processos[index].pid, escalonador->processos[index].prioridadeProcesso, escalonador->processos[index].tempoChegada, escalonador->processos[index].clocksFaltantes);
+        index++;
+        CLOCK++;
+        NUMPROCESSOSEXECUTADOS++;
+    }
+}
+
+
+void executarEscalonador(Escalonador *escalonador, int argc, char **argv) {
+    if (MULTIPLEQUEUES) {
         MultipleQueues(escalonador);
-    } else if (FIRSTCOMEFIRSTSERVED) {
-        FirstComeFirstServed(escalonador);
+    } else if (SHORTESTJOBFIRST) {
+        ShortestJobFirst(escalonador);
     } else {
         MultipleQueues(escalonador);
     }
 
     if (VERBOSITY) {
-        printf("executando escalonador com verbosity\n");
+        printf("Executando escalonador com verbosity\n");
     }
 }
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Uso: %s <arquivo de processos> [-V] [-F] [-S] [a]\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     Escalonador escalonador;
-
     escalonador = adicionarProcessos(argv[1], &escalonador);
-
     readArgs(argc, argv);
-
     executarEscalonador(&escalonador, argc, argv);
+    liberarMemoria(&escalonador);
 
-    liberarMemoria(escalonador);
-
-    return 0;
+    return EXIT_SUCCESS;
 }
