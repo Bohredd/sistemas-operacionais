@@ -111,36 +111,34 @@ void readArgs(int argc, char **argv) {
 }
 
 Escalonador* reordenarEscalonador(Escalonador *escalonador) {
-    if (MULTIPLEQUEUES) {
-        bool trocado;
-        do {
-            trocado = false;
-            for (int i = 0; i < escalonador->numProcessos - 1; i++) {
-                if (escalonador->processos[i].prioridadeProcesso < escalonador->processos[i + 1].prioridadeProcesso) {
+    bool trocado;
+    do {
+        trocado = false;
+        for (int i = 0; i < escalonador->numProcessos - 1; i++) {
+            if (escalonador->processos[i].terminado && !escalonador->processos[i + 1].terminado) {
+                Processo temp = escalonador->processos[i];
+                escalonador->processos[i] = escalonador->processos[i + 1];
+                escalonador->processos[i + 1] = temp;
+                trocado = true;
+            } else if (!escalonador->processos[i].terminado && !escalonador->processos[i + 1].terminado) {
+                if (MULTIPLEQUEUES && escalonador->processos[i].prioridadeProcesso < escalonador->processos[i + 1].prioridadeProcesso) {
+                    Processo temp = escalonador->processos[i];
+                    escalonador->processos[i] = escalonador->processos[i + 1];
+                    escalonador->processos[i + 1] = temp;
+                    trocado = true;
+                } else if (!MULTIPLEQUEUES && escalonador->processos[i].tempoChegada > escalonador->processos[i + 1].tempoChegada) {
                     Processo temp = escalonador->processos[i];
                     escalonador->processos[i] = escalonador->processos[i + 1];
                     escalonador->processos[i + 1] = temp;
                     trocado = true;
                 }
             }
-        } while (trocado);
-    } else {
-        bool trocado;
-        do {
-            trocado = false;
-            for (int i = 0; i < escalonador->numProcessos - 1; i++) {
-                if (escalonador->processos[i].tempoChegada > escalonador->processos[i + 1].tempoChegada) {
-                    Processo temp = escalonador->processos[i];
-                    escalonador->processos[i] = escalonador->processos[i + 1];
-                    escalonador->processos[i + 1] = temp;
-                    trocado = true;
-                }
-            }
-        } while (trocado);
-    }
+        }
+    } while (trocado);
 
     return escalonador;
 }
+
 
 Processo getProcessoChegada(Escalonador *escalonador, int clock) {
     for (int i = 0; i < escalonador->numProcessos; i++) {
@@ -169,22 +167,45 @@ void MultipleQueues(Escalonador *escalonador) {
     bool executandoProcessos = true;
     int index = 0;
 
+    Processo processo;
+
     printf("Numero de processos: %d\n", escalonador->numProcessos);
     while(executandoProcessos) {
-
+        
+        printf("Executados %d \n", NUMPROCESSOSEXECUTADOS);
         if(NUMPROCESSOSEXECUTADOS == (escalonador->numProcessos -1)) {
+            printf("Num processos executados %d e num de processos no escalonador %d \n", NUMPROCESSOSEXECUTADOS, escalonador->numProcessos-1);
             executandoProcessos = false;
+        }
+        if(!(chegouProcesso(escalonador, CLOCK))){
+            printf("Não chegou processo\n");
+            processo = escalonador->processos[index];
         }
 
         if(chegouProcesso(escalonador, CLOCK)) {
-            Processo processo = getProcessoChegada(escalonador, CLOCK);
-            printf("Processo de PID %d chegou no clock %d\n", processo.pid, CLOCK);
+            processo = getProcessoChegada(escalonador, CLOCK);
+            escalonador = reordenarEscalonador(escalonador);
+            processo.clocksFaltantes--;
+            if(processo.clocksFaltantes == 0){
+                NUMPROCESSOSEXECUTADOS++;
+                index++;
+                printf("Processo terminado: %d \n", processo.pid);
+            }
+        } else {
+            processo = escalonador->processos[index];
+            processo.clocksFaltantes--;
+            if(processo.clocksFaltantes == 0){
+                NUMPROCESSOSEXECUTADOS++;
+                index++;
+                printf("Processo terminado: %d \n", processo.pid);
+            }
         }
+        printf("Processo em execucao: %d \n", processo.pid);
 
-        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d Clocks Faltantes: %d \n", escalonador->processos[index].pid, escalonador->processos[index].prioridadeProcesso, escalonador->processos[index].tempoChegada, escalonador->processos[index].clocksFaltantes);
-        index++;
+        printf("Executando processo de PID: %d Prioridade: %d e Chegada: %d Clocks Faltantes: %d \n", processo.pid, processo.prioridadeProcesso, processo.tempoChegada, processo.clocksFaltantes);
         CLOCK++;
-        NUMPROCESSOSEXECUTADOS++;
+
+        printf("\n");
     }
 }
 
