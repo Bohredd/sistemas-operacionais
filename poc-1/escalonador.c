@@ -198,7 +198,6 @@ int encontrarIndicePorPID(Escalonador *escalonador, int pid) {
     return -1;
 }
 
-//  IMPLEMENTAR AS ESTATISTICAS DO PROCESSO
 void MultipleQueues(Escalonador *escalonador, Historico *historico) {
     printf("Executando escalonador com Múltiplas Filas com Prioridade\n");
 
@@ -209,22 +208,19 @@ void MultipleQueues(Escalonador *escalonador, Historico *historico) {
     bool trocado = false;
     PROCESSOSSOLICITADOS = escalonador->numProcessos;
 
-    // printf("Numero de processos: %d\n", escalonador->numProcessos);
     while (executandoProcessos) {
-        // printf("CLOCK ATUAL %d\n", CLOCK);
 
         Processo *processoAtual = &escalonador->processos[index];
 
         if (chegouProcesso(escalonador, CLOCK)) {
             Processo novoProcesso = getProcessoChegada(escalonador, CLOCK);
-            // printf("Novo processo de PID %d chegou no clock %d\n", novoProcesso.pid, CLOCK);
-            // printf("Processo atual de PID %d\n", processoAtual->pid);
             novoProcesso.tempoQueFicouReady++;
 
             int indexNovo = encontrarIndicePorPID(escalonador, novoProcesso.pid);
             if (processoAtual->clocksFaltantes != 0) {
 
                 Processo processoAtual = escalonador->processos[0];
+                strcpy(processoAtual.estadoAtual, "wait");
                 processoAtual.tempoQueFicouWait++;
                 escalonador->processos[0] = novoProcesso;
                 escalonador->processos[indexNovo] = processoAtual;
@@ -233,7 +229,6 @@ void MultipleQueues(Escalonador *escalonador, Historico *historico) {
             } 
 
         } else {
-            // printf("Não chegou novo processo e o atual tem clocks faltantes %d pid %d \n", processoAtual->clocksFaltantes, processoAtual->pid);
             if(! processoAtual->clocksFaltantes > 0){
                 processoAtual = &escalonador->processos[0];
                 escalonador = reordenarEscalonador(escalonador, historico);
@@ -246,7 +241,6 @@ void MultipleQueues(Escalonador *escalonador, Historico *historico) {
             processoAtual->clocksFaltantes--;
         }
         if (processoAtual->clocksFaltantes == 0) {
-            // printf("Processo terminado: %d\n", processoAtual->pid);
             processoAtual->terminado = true;
             processoAtual->tempoQueFicouNoEscalonador = CLOCK - processoAtual->tempoChegada;
 
@@ -259,8 +253,6 @@ void MultipleQueues(Escalonador *escalonador, Historico *historico) {
                 escalonador = reordenarEscalonador(escalonador, historico);
             } 
             trocado = false;
-            // printf("Numero de processos: %d\n", PROCESSOSSOLICITADOS);
-            // printf("Numero de processos executados: %d\n", NUMPROCESSOSEXECUTADOS);
 
             if (NUMPROCESSOSEXECUTADOS < PROCESSOSSOLICITADOS) {
                 index = 0;
@@ -269,7 +261,6 @@ void MultipleQueues(Escalonador *escalonador, Historico *historico) {
             }
         }
         CLOCK++;
-        // printf("\n");
     }
 }
 
@@ -385,6 +376,36 @@ void mostrarEstaticasProcessos(Historico *historico){
     }
     
     printf("=========+=================+=================+============\n");
+
+    int menorTempoExecucao = historico->processos[0].tempoDeExecucaoNecessario;
+    int maiorTempoExecucao = historico->processos[0].tempoDeExecucaoNecessario;
+    int somaTempoExecucao = 0;
+    int somaTempoReady = 0;
+    int somaTempoWait = 0;
+
+    for (int i = 0; i < historico->numProcessos; i++) {
+        int tempoExecucao = historico->processos[i].tempoDeExecucaoNecessario;
+        somaTempoExecucao += tempoExecucao;
+        if (tempoExecucao < menorTempoExecucao) {
+            menorTempoExecucao = tempoExecucao;
+        }
+        if (tempoExecucao > maiorTempoExecucao) {
+            maiorTempoExecucao = tempoExecucao;
+        }
+        somaTempoReady += historico->processos[i].tempoQueFicouReady;
+        somaTempoWait += historico->processos[i].tempoQueFicouWait;
+    }
+
+    float tempoMedioExecucao = (float) somaTempoExecucao / historico->numProcessos;
+    float tempoMedioReadyWait = (float) (somaTempoReady + somaTempoWait) / historico->numProcessos;
+
+    printf("Tempo total de simulacao: 5\n");
+    printf("Número de processos: %d\n", historico->numProcessos);
+    printf("Menor tempo de execucao: %d\n", menorTempoExecucao);
+    printf("Maior tempo de execucao: %d\n", maiorTempoExecucao);
+    printf("Tempo medio de execucao: %.2f\n", tempoMedioExecucao);
+    printf("Tempo medio em Ready/Wait: %.2f\n", tempoMedioReadyWait);    
+
 }
 
 int main(int argc, char *argv[]) {
