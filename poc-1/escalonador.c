@@ -288,7 +288,7 @@ void ShortestJobFirst(Escalonador *escalonador, Historico *historico) {
             float ta = escalonador->processos[index].clocksFaltantes;
             float Ta = escalonador->processos[index].tempoChegada;
             float Tn = (a * ta) + ((1 - a) * Ta);
-            escalonador->processos[index].clocksFaltantes = (int) Tn; // Atualiza a estimativa
+            escalonador->processos[index].clocksFaltantes = (int) Tn;
         }
 
         printf("Executando processo de PID: %d Prioridade: %d Chegada: %d Clocks Faltantes: %d \n",
