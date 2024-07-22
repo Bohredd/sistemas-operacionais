@@ -5,6 +5,7 @@
 #include <limits.h>
 #include "osPRNG.h"
 #include <stdbool.h>
+#include <math.h>
 
 #define MAXIMO_PRIORIDADE 7
 #define MAXIMO_PROCESSOS 100
@@ -61,7 +62,9 @@ int lerProcessosDoArquivo(const char *nomeArquivo, Processo processos[], int max
         processos[i].tempoReady = 0;
         processos[i].tempoWait = 0;
         processos[i].tempoSistema = 0;
-
+        float first = AGGING_FACTOR * (processos[i].tempoRestante - 1);
+        float second = (1 - AGGING_FACTOR) * processos[i].estimativaTempoRestante;
+        processos[i].estimativaTempoRestante = (int)(first + second + 0.5);
         i++;
     }
 
@@ -105,8 +108,24 @@ void escalonadorSJFPreemptivo(Processo processos[], int numProcessos, int flagV)
     Processo* ultimoProcesso = &processos[0];
 
     for (int i = 0; i < numProcessos; i++) {
-        processos[i].estimativaTempoRestante = processos[i].tempoRestante;
+        float ta = processos[i].tempoRestante;
+
+        float first = AGGING_FACTOR * ta;
+        float second = (1 - AGGING_FACTOR) * processos[i].estimativaTempoRestante;
+        float sum = first + second;
+
+        // printf("Processo %d\n", i);
+        // printf("Tempo Restante: %d\n", processos[i].tempoRestante);
+        // printf("Estimativa Anterior: %f\n", processos[i].estimativaTempoRestante);
+        // printf("First: %f\n", first);
+        // printf("Second: %f\n", second);
+        // printf("Sum (antes de arredondar): %f\n", sum);
+
+        processos[i].estimativaTempoRestante = sum;
+
+        // printf("Estimativa Atualizada: %f\n", processos[i].estimativaTempoRestante);
     }
+
 
     while (processosPendentes != 0) {
         ordenarPorTempoRestante(processos, numProcessos);
@@ -133,7 +152,6 @@ void escalonadorSJFPreemptivo(Processo processos[], int numProcessos, int flagV)
 
         processoExecutado = 0;
         for (int i = 0; i < numProcessos; i++) {
-
             if (!chegouProcesso) {
                 ultimoProcesso = &processos[i];
             }
@@ -177,7 +195,20 @@ void escalonadorSJFPreemptivo(Processo processos[], int numProcessos, int flagV)
                     processoExecutado = 1;
                     break;
                 } else {
-                    processos[i].estimativaTempoRestante = (AGGING_FACTOR * (processos[i].tempoRestante - 1)) + ((1 - AGGING_FACTOR) * processos[i].estimativaTempoRestante);
+                    float first = AGGING_FACTOR * (processos[i].tempoRestante - 1);
+                    float second = (1 - AGGING_FACTOR) * processos[i].estimativaTempoRestante;
+                    float sum = first + second;
+
+                    int novaEstimativa = (int)roundf(sum);
+
+                    // printf("Estimativa atual: %f\n", processos[i].estimativaTempoRestante);
+                    // printf("First: %f\n", first);
+                    // printf("Second: %f\n", second);
+                    // printf("Sum (antes de arredondar): %f\n", sum);
+                    // printf("Estimativa Atualizada: %d\n", novaEstimativa);
+
+                    processos[i].estimativaTempoRestante = (float)novaEstimativa;
+
                     processos[i].tempoRestante -= 1;
                     processos[i].tempoSistema++;
 
@@ -256,12 +287,15 @@ int quantumTime(int prioridade) {
     return (1 << prioridade);
 }
 
-void escalonadorMultiplasFilas(Processo processos[], int numProcessos, int flagV) {
+void escalonadorMultiplasFilas(Processo processos[], int numProcessos, bool flagV) {
     Processo filas[NUM_FILAS][MAXIMO_PROCESSOS];
+    Processo processosCompletados[MAXIMO_PROCESSOS];
+
     int numFilas[NUM_FILAS] = {0};
     int tempoAtual = 0;
     int processosPendentes = numProcessos;
-    int processoExecutado = 1;
+    int quantiaProcessosCompletados = 0;
+    bool processoExecutado;
 
     for (int i = 0; i < numProcessos; i++) {
         int prioridade = processos[i].prioridade;
@@ -271,78 +305,60 @@ void escalonadorMultiplasFilas(Processo processos[], int numProcessos, int flagV
     }
 
     while (processosPendentes > 0) {
-        if (processoExecutado == 0) {
-            if (flagV) {
-                fprintf(stderr, "%d:null:null:false:idle\n", tempoAtual);
-            }
-        }
-
-        processoExecutado = 0;
+        processoExecutado = false;
 
         for (int fila = NUM_FILAS - 1; fila >= 0; fila--) {
             int quantum = quantumTime(fila);
-            for (int i = 0; i < numFilas[fila]; i++) {
-                Processo p = filas[fila][i];
+            int i = 0;
+
+            while (i < numFilas[fila]) {
                 int tempoExecucao = 0;
-                while (p.tempoRestante > 0 && tempoExecucao < quantum) {
-                    if (p.emIO) {
-                        p.tempoIO++;
+
+                while (tempoExecucao < quantum && filas[fila][i].tempoRestante > 0) {
+                    if (filas[fila][i].emIO) {
+                        filas[fila][i].tempoWait++;
+                        filas[fila][i].tempoSistema++;
+                        imprimirStatus(tempoAtual, filas[fila][i].pid, filas[fila][i].tempoRestante, "wait", flagV);
                         if (IO_Term()) {
-                            p.emIO = 0;
-                            p.tempoReady++;
-                            p.tempoSistema++;
-                            imprimirStatus(tempoAtual, p.pid, p.tempoRestante, "ready", flagV);
-                        } else {
-                            p.tempoWait++;
-                            p.tempoSistema++;
-                            imprimirStatus(tempoAtual, p.pid, p.tempoRestante, "wait", flagV);
+                            filas[fila][i].emIO = false;
+                            filas[fila][i].tempoReady++;
                         }
-                        processoExecutado = 1;
-                        break;
-                    } else if (IO_Req() && p.emIO == 0) {
-                        p.emIO = 1;
-                        p.tempoIO++;
-                        p.tempoSistema++;
-                        imprimirStatus(tempoAtual, p.pid, p.tempoRestante, "wait", flagV);
-                        p.tempoWait++;
-                        processoExecutado = 1;
-                        break;
+                    } else if (IO_Req()) {
+                        filas[fila][i].emIO = true;
+                        filas[fila][i].tempoWait++;
+                        filas[fila][i].tempoSistema++;
+                        imprimirStatus(tempoAtual, filas[fila][i].pid, filas[fila][i].tempoRestante, "wait", flagV);
                     } else {
-                        p.tempoRestante -= 1;
-                        p.tempoSistema++;
+                        filas[fila][i].tempoRestante--;
+                        filas[fila][i].tempoSistema++;
 
-                        if (p.tempoRestante == 0) {
-                            imprimirStatus(tempoAtual, p.pid, p.tempoRestante, "end", flagV);
+                        if (filas[fila][i].tempoRestante == 0) {
+                            imprimirStatus(tempoAtual, filas[fila][i].pid, filas[fila][i].tempoRestante, "end", flagV);
+                            processosCompletados[quantiaProcessosCompletados++] = filas[fila][i];
                             processosPendentes--;
+
+                            for (int j = i; j < numFilas[fila] - 1; j++) {
+                                filas[fila][j] = filas[fila][j + 1];
+                            }
+                            numFilas[fila]--;
+                            i--;
                         } else {
-                            imprimirStatus(tempoAtual, p.pid, p.tempoRestante, "running", flagV);
+                            imprimirStatus(tempoAtual, filas[fila][i].pid, filas[fila][i].tempoRestante, "running", flagV);
                         }
-
-                        processoExecutado = 1;
                     }
-
                     tempoExecucao++;
+                    processoExecutado = true;
                 }
 
-                if (p.tempoRestante > 0) {
-                    Processo temp = p;
-                    for (int j = i; j < numFilas[fila] - 1; j++) {
-                        filas[fila][j] = filas[fila][j + 1];
-                    }
-                    filas[fila][numFilas[fila] - 1] = temp;
-                } else {
-                    for (int j = i; j < numFilas[fila] - 1; j++) {
-                        filas[fila][j] = filas[fila][j + 1];
-                    }
-                    numFilas[fila]--;
-                    i--;
+                if (filas[fila][i].tempoRestante > 0) {
+                    i++;
                 }
 
                 if (processoExecutado) break;
             }
+
             if (processoExecutado) break;
         }
-
         tempoAtual++;
     }
 
@@ -350,13 +366,17 @@ void escalonadorMultiplasFilas(Processo processos[], int numProcessos, int flagV
     printf("Processo | Tempo total     | Tempo total     | Tempo total\n");
     printf("         | em estado Ready | em estado Wait  | no sistema\n");
     printf("=========+=================+=================+============\n");
-    for (int i = 0; i < numProcessos; i++) {
-        printf(" %2d     | %2d              | %2d              | %2d\n",
-               processos[i].pid,
-               processos[i].tempoReady,
-               processos[i].tempoWait,
-               processos[i].tempoSistema);
+
+    for (int i = 0; i < quantiaProcessosCompletados; i++) {
+        if (processosCompletados[i].pid != 0 || (processosCompletados[i].tempoReady != 0 || processosCompletados[i].tempoWait != 0 || processosCompletados[i].tempoSistema != 0)) {
+            printf(" %2d     | %2d              | %2d              | %2d\n",
+                processosCompletados[i].pid,
+                processosCompletados[i].tempoReady,
+                processosCompletados[i].tempoWait,
+                processosCompletados[i].tempoSistema);
+        }
     }
+
     printf("=========+=================+=================+============\n");
 
     int tempoSimulacao = tempoAtual;
@@ -365,22 +385,19 @@ void escalonadorMultiplasFilas(Processo processos[], int numProcessos, int flagV
     int somaTempo = 0;
     int totalReadyWait = 0;
 
-    for (int i = 0; i < numProcessos; i++) {
-        Processo* processo = &processos[i];
-        printf("Processo %d: tempoRestante=%d, tempoReady=%d, tempoWait=%d, tempoSistema=%d\n",
-               processo->pid, processo->tempoRestante, processo->tempoReady, processo->tempoWait, processo->tempoSistema);
-        int tempoExecucao = processo->tempoSistema;
+    for (int i = 0; i < quantiaProcessosCompletados; i++) {
+        int tempoExecucao = processosCompletados[i].tempoSistema;
         somaTempo += tempoExecucao;
         if (tempoExecucao < menorTempo) menorTempo = tempoExecucao;
         if (tempoExecucao > maiorTempo) maiorTempo = tempoExecucao;
-        totalReadyWait += (processo->tempoReady + processo->tempoWait);
+        totalReadyWait += (processosCompletados[i].tempoReady + processosCompletados[i].tempoWait);
     }
 
-    float tempoMedioExecucao = (float) somaTempo / numProcessos;
-    float tempoMedioReadyWait = (float) (totalReadyWait) / numProcessos;
+    float tempoMedioExecucao = (float) somaTempo / quantiaProcessosCompletados;
+    float tempoMedioReadyWait = (float) totalReadyWait / quantiaProcessosCompletados;
 
     printf("Tempo total de simulação.: %d (somado +1 pelo inicio em 0 )\n", tempoSimulacao + 1);
-    printf("Número de processos......: %d\n", numProcessos);
+    printf("Número de processos......: %d\n", quantiaProcessosCompletados);
     printf("Menor tempo de execução..: %d\n", menorTempo);
     printf("Maior tempo de execução..: %d\n", maiorTempo);
     printf("Tempo médio de execução..: %.2f\n", tempoMedioExecucao);
@@ -422,6 +439,8 @@ int main(int argc, char *argv[]) {
     int escalonadorTipo;
 
     processarArgumentos(argc, argv, &nomeArquivo, &flagV, &flagF, &aggingFactor, &escalonadorTipo);
+
+    // printf("aggiFactor: %f\n", aggingFactor);
 
     if (nomeArquivo == NULL) {
         fprintf(stderr, "Uso: %s <arquivo> [-v] [-F] [-S [<valor float>]]\n", argv[0]);
